@@ -12,6 +12,15 @@ categories = ["command-line-utilities", "encoding"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/A1-Triard/pcl2rtf"
 
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "z"
+panic = "abort"
+strip = true
 
 [dependencies]
 either = { version = "1.15.0", default-features = false }
