@@ -1,3 +1,5 @@
+#![deny(warnings)]
+
 mod pcl;
 use pcl::*;
 
@@ -6,33 +8,16 @@ use rtf::*;
 
 mod ru;
 
+use itertools::Itertools;
 use std::io::{Read, stdin};
+use std::process::ExitCode;
 
-struct Commands<'a> {
-    pcl: PclParser<'a>,
-}
-
-impl<'a> Iterator for Commands<'a> {
-    type Item = (PclCommand, u32);
-
-    fn next(&mut self) -> Option<(PclCommand, u32)> {
-        let Some(command) = self.pcl.next() else { return None; };
-        let Ok(command) = command else {
-            println!("{command:?}");
-            return None;
-        };
-        Some(command)
-    }
-}
-
-fn main() {
+fn main() -> ExitCode {
     let mut stdin = stdin().bytes().map(|x| x.unwrap());
-    let mut commands = Commands {
-        pcl: parse_pcl(&mut stdin)
-    };
-    let res = pcl_to_rtf(&mut commands);
-    match res {
-        Err(e) => eprintln!("{e:?}"),
-        Ok(rtf) => print!("{rtf}"),
+    let rtf = parse_pcl(&mut stdin).process_results(|mut commands| pcl_to_rtf(&mut commands));
+    match rtf {
+        Err(e) => { eprintln!("Error: {e}"); ExitCode::from(1) },
+        Ok(Err(e)) => { eprintln!("Error: {e}"); ExitCode::from(1) },
+        Ok(Ok(rtf)) => { print!("{rtf}"); ExitCode::SUCCESS },
     }
 }

@@ -1,4 +1,5 @@
 use either::{Either, Left, Right};
+use std::fmt::{self, Display, Formatter};
 
 #[derive(Debug)]
 pub enum PclParserError {
@@ -7,6 +8,17 @@ pub enum PclParserError {
     InvalidCommand(u32),
 }
 
+impl Display for PclParserError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        match self {
+            PclParserError::FileTooBig => write!(f, "Too big file"),
+            PclParserError::UnknownCommand(x) => write!(f, "Unknown command at {x:X}h"),
+            PclParserError::InvalidCommand(x) => write!(f, "Invalid command at {x:X}h"),
+        }
+    }
+}
+
+#[allow(dead_code)]
 #[derive(Debug)]
 pub enum PclCommand {
     Char(u8),

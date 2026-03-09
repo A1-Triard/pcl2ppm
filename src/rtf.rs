@@ -69,6 +69,15 @@ pub enum PclToRtfError {
     UnexpectedCommand(u32),
 }
 
+impl Display for PclToRtfError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        match self {
+            PclToRtfError::UnexpectedEnd => write!(f, "Unexpected end of file"),
+            PclToRtfError::UnexpectedCommand(x) => write!(f, "Unexpected command at {x:X}h"),
+        }
+    }
+}
+
 pub fn pcl_to_rtf(pcl: &mut dyn Iterator<Item=(PclCommand, u32)>) -> Result<Rtf, PclToRtfError> {
     enum State { PageStart, LineStart, Text, LineEnd }
     let mut rtf = Rtf { pages: Vec::new() };
@@ -94,10 +103,7 @@ pub fn pcl_to_rtf(pcl: &mut dyn Iterator<Item=(PclCommand, u32)>) -> Result<Rtf,
                         });
                         state = State::LineStart;
                     },
-                    _ => {
-                        eprintln!("{command:?}");
-                        return Err(PclToRtfError::UnexpectedCommand(offset));
-                    },
+                    _ => return Err(PclToRtfError::UnexpectedCommand(offset)),
                 }
             },
             State::LineStart => {
@@ -132,10 +138,7 @@ pub fn pcl_to_rtf(pcl: &mut dyn Iterator<Item=(PclCommand, u32)>) -> Result<Rtf,
                     PclCommand::Char(12) => {
                         state = State::PageStart;
                     },
-                    _ => {
-                        eprintln!("{command:?}");
-                        return Err(PclToRtfError::UnexpectedCommand(offset));
-                    },
+                    _ => return Err(PclToRtfError::UnexpectedCommand(offset)),
                 }
             },
             State::LineEnd => {
@@ -146,10 +149,7 @@ pub fn pcl_to_rtf(pcl: &mut dyn Iterator<Item=(PclCommand, u32)>) -> Result<Rtf,
                         rtf.pages.last_mut().unwrap().lines.last_mut().unwrap().space_after = space_after;
                         state = State::LineStart;
                     },
-                    _ => {
-                        eprintln!("{command:?}");
-                        return Err(PclToRtfError::UnexpectedCommand(offset));
-                    },
+                    _ => return Err(PclToRtfError::UnexpectedCommand(offset)),
                 }
             },
         }
