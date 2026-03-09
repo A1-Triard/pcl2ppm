@@ -25,3 +25,6 @@ strip = true
 [dependencies]
 either = { version = "1.15.0", default-features = false }
 iter-identify_first_last = { version = "0.2.3", default-features = false }
+
+[badges]
+maintenance = { status = "actively-developed" }
