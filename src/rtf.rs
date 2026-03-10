@@ -150,8 +150,8 @@ pub fn pcl_to_rtf(pcl: &mut dyn Iterator<Item=(PclCommand, u32)>) -> Result<Rtf,
             State::LineEnd => {
                 let (command, offset) = pcl.next().ok_or(PclToRtfError::UnexpectedEnd)?;
                 match command {
-                    PclCommand::VerticalCursorPositioning(Right(x)) if x >= 43 => {
-                        let space_after = (u32::try_from(x).unwrap() - 43) * 26 / 5; // magic & science
+                    PclCommand::VerticalCursorPositioning(Right(x)) if x >= 48 => {
+                        let space_after = (u32::try_from(x).unwrap() - 48) * 24 / 5; // magic & science
                         rtf.pages.last_mut().unwrap().lines.last_mut().unwrap().space_after = space_after;
                         state = State::LineStart(true);
                     },
