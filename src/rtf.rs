@@ -244,6 +244,8 @@ pub fn pcl_to_rtf(pcl: &mut dyn Iterator<Item=(PclCommand, u32)>) -> Result<Rtf,
                         let cur_style = rtf.pages.last().unwrap()
                             .lines.last().unwrap()
                             .spans.last().map(|x| (x.style, x.underline));
+                        let style = if use_font { style } else { Style::Regular };
+                        let underline = underline && use_font;
                         if cur_style != Some((style, underline)) {
                             rtf.pages.last_mut().unwrap().lines.last_mut().unwrap().spans.push(Span {
                                 text: String::new(),
@@ -260,6 +262,8 @@ pub fn pcl_to_rtf(pcl: &mut dyn Iterator<Item=(PclCommand, u32)>) -> Result<Rtf,
                         let cur_style = rtf.pages.last().unwrap()
                             .lines.last().unwrap()
                             .spans.last().map(|x| (x.style, x.underline));
+                        let style = if use_font { style } else { Style::Regular };
+                        let underline = underline && use_font;
                         if cur_style != Some((style, underline)) {
                             rtf.pages.last_mut().unwrap().lines.last_mut().unwrap().spans.push(Span {
                                 text: String::new(),
