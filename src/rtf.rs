@@ -10,6 +10,8 @@ enum Style {
     Italic,
     Bold,
     ItalicBold,
+    Subscript,
+    Superscript,
 }
 
 impl Style {
@@ -19,10 +21,14 @@ impl Style {
             (Style::Italic, false) => { write!(f, "{{\\i ")?; Ok(true) },
             (Style::Bold, false) => { write!(f, "{{\\b ")?; Ok(true) },
             (Style::ItalicBold, false) => { write!(f, "{{\\i\\b ")?; Ok(true) },
+            (Style::Subscript, false) => { write!(f, "{{\\sub\\charscalex172 ")?; Ok(true) },
+            (Style::Superscript, false) => { write!(f, "{{\\super\\charscalex172 ")?; Ok(true) },
             (Style::Regular, true) => { write!(f, "{{\\ul ")?; Ok(true) },
             (Style::Italic, true) => { write!(f, "{{\\ul\\i ")?; Ok(true) },
             (Style::Bold, true) => { write!(f, "{{\\ul\\b ")?; Ok(true) },
             (Style::ItalicBold, true) => { write!(f, "{{\\ul\\i\\b ")?; Ok(true) },
+            (Style::Subscript, true) => { write!(f, "{{\\ul\\sub\\charscalex172 ")?; Ok(true) },
+            (Style::Superscript, true) => { write!(f, "{{\\ul\\super\\charscalex172 ")?; Ok(true) },
         }
     }
 }
@@ -115,7 +121,24 @@ impl Display for PclToRtfError {
 }
 
 pub fn pcl_to_rtf(pcl: &mut dyn Iterator<Item=(PclCommand, u32)>) -> Result<Rtf, PclToRtfError> {
-    enum State { PageStart, LineStart(bool), Text, LineEnd }
+
+    #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+    enum PrevState { PageStart, LineStart(bool), Text, LineEnd }
+
+    #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+    enum State { PageStart, LineStart(bool), Text, Tab, LineEnd, SubSuperscriptStartEnd(PrevState) }
+
+    impl From<PrevState> for State {
+        fn from(p: PrevState) -> State {
+            match p {
+                PrevState::PageStart => State::PageStart,
+                PrevState::LineStart(x) => State::LineStart(x),
+                PrevState::Text => State::Text,
+                PrevState::LineEnd => State::LineEnd,
+            }
+        }
+    }
+
     let mut rtf = Rtf { pages: Vec::new() };
     let mut state = State::PageStart;
     let mut font = Font::X9500;
@@ -152,6 +175,22 @@ pub fn pcl_to_rtf(pcl: &mut dyn Iterator<Item=(PclCommand, u32)>) -> Result<Rtf,
                         font = Font::X9500;
                         style = Style::ItalicBold;
                     },
+                    PclCommand::SecondarySymbolSet(9504, b'X') => {
+                        font = Font::X9500;
+                        state = State::SubSuperscriptStartEnd(PrevState::PageStart);
+                    },
+                    PclCommand::VerticalCursorPositioningRows(Right(-2500)) => {
+                        if style != Style::Superscript {
+                            return Err(PclToRtfError::UnexpectedCommand(offset));
+                        }
+                        state = State::SubSuperscriptStartEnd(PrevState::PageStart);
+                    },
+                    PclCommand::VerticalCursorPositioningRows(Right(4000)) => {
+                        if style != Style::Subscript {
+                            return Err(PclToRtfError::UnexpectedCommand(offset));
+                        }
+                        state = State::SubSuperscriptStartEnd(PrevState::PageStart);
+                    },
                     PclCommand::EnableUnderline => underline = true,
                     PclCommand::DisableUnderline => underline = false,
                     PclCommand::VerticalCursorPositioning(Left(0)) => { },
@@ -169,7 +208,7 @@ pub fn pcl_to_rtf(pcl: &mut dyn Iterator<Item=(PclCommand, u32)>) -> Result<Rtf,
                 }
             },
             State::LineStart(allow_line_start) => {
-                let (command, offset) = pcl.next().ok_or(PclToRtfError::UnexpectedEnd)?;
+                let Some((command, offset)) = pcl.next() else { return Ok(rtf); };
                 match command {
                     PclCommand::SecondarySymbolSet(9500, b'X') => {
                         font = Font::X9500;
@@ -190,6 +229,22 @@ pub fn pcl_to_rtf(pcl: &mut dyn Iterator<Item=(PclCommand, u32)>) -> Result<Rtf,
                     PclCommand::SecondarySymbolSet(9503, b'X') => {
                         font = Font::X9500;
                         style = Style::ItalicBold;
+                    },
+                    PclCommand::SecondarySymbolSet(9504, b'X') => {
+                        font = Font::X9500;
+                        state = State::SubSuperscriptStartEnd(PrevState::LineStart(allow_line_start));
+                    },
+                    PclCommand::VerticalCursorPositioningRows(Right(-2500)) => {
+                        if style != Style::Superscript {
+                            return Err(PclToRtfError::UnexpectedCommand(offset));
+                        }
+                        state = State::SubSuperscriptStartEnd(PrevState::LineStart(allow_line_start));
+                    },
+                    PclCommand::VerticalCursorPositioningRows(Right(4000)) => {
+                        if style != Style::Subscript {
+                            return Err(PclToRtfError::UnexpectedCommand(offset));
+                        }
+                        state = State::SubSuperscriptStartEnd(PrevState::PageStart);
                     },
                     PclCommand::EnableUnderline => underline = true,
                     PclCommand::DisableUnderline => underline = false,
@@ -213,7 +268,7 @@ pub fn pcl_to_rtf(pcl: &mut dyn Iterator<Item=(PclCommand, u32)>) -> Result<Rtf,
                 }
             },
             State::Text => {
-                let (command, offset) = pcl.next().ok_or(PclToRtfError::UnexpectedEnd)?;
+                let Some((command, offset)) = pcl.next() else { return Ok(rtf); };
                 match command {
                     PclCommand::SecondarySymbolSet(9500, b'X') => {
                         font = Font::X9500;
@@ -234,6 +289,22 @@ pub fn pcl_to_rtf(pcl: &mut dyn Iterator<Item=(PclCommand, u32)>) -> Result<Rtf,
                     PclCommand::SecondarySymbolSet(9503, b'X') => {
                         font = Font::X9500;
                         style = Style::ItalicBold;
+                    },
+                    PclCommand::SecondarySymbolSet(9504, b'X') => {
+                        font = Font::X9500;
+                        state = State::SubSuperscriptStartEnd(PrevState::Text);
+                    },
+                    PclCommand::VerticalCursorPositioningRows(Right(-2500)) => {
+                        if style != Style::Superscript {
+                            return Err(PclToRtfError::UnexpectedCommand(offset));
+                        }
+                        state = State::SubSuperscriptStartEnd(PrevState::Text);
+                    },
+                    PclCommand::VerticalCursorPositioningRows(Right(4000)) => {
+                        if style != Style::Subscript {
+                            return Err(PclToRtfError::UnexpectedCommand(offset));
+                        }
+                        state = State::SubSuperscriptStartEnd(PrevState::PageStart);
                     },
                     PclCommand::EnableUnderline => underline = true,
                     PclCommand::DisableUnderline => underline = false,
@@ -257,6 +328,9 @@ pub fn pcl_to_rtf(pcl: &mut dyn Iterator<Item=(PclCommand, u32)>) -> Result<Rtf,
                             .lines.last_mut().unwrap()
                             .spans.last_mut().unwrap()
                             .text.push(c);
+                        if style == Style::Superscript || style == Style::Subscript {
+                            state = State::Tab;
+                        }
                     },
                     PclCommand::HorizontalCursorPositioning(Right(x)) if x != 0 && x % 30 == 0 => {
                         let cur_style = rtf.pages.last().unwrap()
@@ -287,8 +361,17 @@ pub fn pcl_to_rtf(pcl: &mut dyn Iterator<Item=(PclCommand, u32)>) -> Result<Rtf,
                     _ => return Err(PclToRtfError::UnexpectedCommand(offset)),
                 }
             },
-            State::LineEnd => {
+            State::Tab => {
                 let (command, offset) = pcl.next().ok_or(PclToRtfError::UnexpectedEnd)?;
+                match command {
+                    PclCommand::HorizontalCursorPositioning(Right(5)) => {
+                        state = State::Text;
+                    },
+                    _ => return Err(PclToRtfError::UnexpectedCommand(offset)),
+                }
+            },
+            State::LineEnd => {
+                let Some((command, offset)) = pcl.next() else { return Ok(rtf); };
                 match command {
                     PclCommand::SecondarySymbolSet(9500, b'X') => {
                         font = Font::X9500;
@@ -310,6 +393,22 @@ pub fn pcl_to_rtf(pcl: &mut dyn Iterator<Item=(PclCommand, u32)>) -> Result<Rtf,
                         font = Font::X9500;
                         style = Style::ItalicBold;
                     },
+                    PclCommand::SecondarySymbolSet(9504, b'X') => {
+                        font = Font::X9500;
+                        state = State::SubSuperscriptStartEnd(PrevState::LineEnd);
+                    },
+                    PclCommand::VerticalCursorPositioningRows(Right(-2500)) => {
+                        if style != Style::Superscript {
+                            return Err(PclToRtfError::UnexpectedCommand(offset));
+                        }
+                        state = State::SubSuperscriptStartEnd(PrevState::LineEnd);
+                    },
+                    PclCommand::VerticalCursorPositioningRows(Right(4000)) => {
+                        if style != Style::Subscript {
+                            return Err(PclToRtfError::UnexpectedCommand(offset));
+                        }
+                        state = State::SubSuperscriptStartEnd(PrevState::PageStart);
+                    },
                     PclCommand::EnableUnderline => underline = true,
                     PclCommand::DisableUnderline => underline = false,
                     PclCommand::Char(14) => use_font = true,
@@ -321,6 +420,47 @@ pub fn pcl_to_rtf(pcl: &mut dyn Iterator<Item=(PclCommand, u32)>) -> Result<Rtf,
                     },
                     PclCommand::VerticalCursorPositioning(Right(_)) => {
                         state = State::LineStart(false);
+                    },
+                    _ => return Err(PclToRtfError::UnexpectedCommand(offset)),
+                }
+            },
+            State::SubSuperscriptStartEnd(prev_state) => {
+                let Some((command, offset)) = pcl.next() else { return Ok(rtf); };
+                match command {
+                    PclCommand::VerticalCursorPositioningRows(Right(2500)) => {
+                        style = Style::Superscript;
+                        state = prev_state.into();
+                    },
+                    PclCommand::VerticalCursorPositioningRows(Right(-4000)) => {
+                        style = Style::Subscript;
+                        state = prev_state.into();
+                    },
+                    PclCommand::Char(14) => use_font = true,
+                    PclCommand::Char(15) => use_font = false,
+                    PclCommand::SecondarySymbolSet(9500, b'X') => {
+                        font = Font::X9500;
+                        style = Style::Regular;
+                        state = prev_state.into();
+                    },
+                    PclCommand::SecondarySymbolSet(9508, b'X') => {
+                        font = Font::X9508;
+                        style = Style::Regular;
+                        state = prev_state.into();
+                    },
+                    PclCommand::SecondarySymbolSet(9501, b'X') => {
+                        font = Font::X9500;
+                        style = Style::Italic;
+                        state = prev_state.into();
+                    },
+                    PclCommand::SecondarySymbolSet(9502, b'X') => {
+                        font = Font::X9500;
+                        style = Style::Bold;
+                        state = prev_state.into();
+                    },
+                    PclCommand::SecondarySymbolSet(9503, b'X') => {
+                        font = Font::X9500;
+                        style = Style::ItalicBold;
+                        state = prev_state.into();
                     },
                     _ => return Err(PclToRtfError::UnexpectedCommand(offset)),
                 }

@@ -31,6 +31,7 @@ pub enum PclCommand {
     SecondarySymbolSet(u16, u8),
     VerticalCursorPositioning(Either<u16, i16>),
     HorizontalCursorPositioning(Either<u16, i16>),
+    VerticalCursorPositioningRows(Either<u32, i32>),
     EnableUnderline,
     DisableUnderline,
 }
@@ -55,6 +56,85 @@ impl<'a> PclParser<'a> {
         let Some(read) = self.read.checked_add(1) else { return Err(PclParserError::FileTooBig); };
         self.read = read;
         Ok(c)
+    }
+
+    fn read_decimal(&mut self, precision: u8) -> Result<(Either<u32, i32>, u8), PclParserError> {
+        let mut c = self.read_byte()?;
+        if c == b'+' || c == b'-' {
+            let neg = c == b'-';
+            let mut point = false;
+            let mut decimals = 0u8;
+            let mut res = 0i32;
+            c = self.read_byte()?;
+            if c != b'.' && (c < b'0' || c > b'9') {
+                return Err(PclParserError::InvalidCommand(self.command_start));
+            }
+            let t = loop {
+                if c == b'.' {
+                    if point {
+                        return Err(PclParserError::InvalidCommand(self.command_start));
+                    }
+                    point = true;
+                } else {
+                    if point {
+                        if decimals == precision {
+                            return Err(PclParserError::InvalidCommand(self.command_start));
+                        }
+                        decimals += 1;
+                    }
+                    res = res
+                        .checked_mul(10)
+                        .and_then(|x| x.checked_add(i32::from(c - b'0')))
+                        .ok_or_else(|| PclParserError::InvalidCommand(self.command_start))?;
+                }
+                c = self.read_byte()?;
+                if c != b'.' && (c < b'0' || c > b'9') {
+                    break c;
+                }
+            };
+            for _ in decimals .. precision {
+                res = res
+                    .checked_mul(10)
+                    .ok_or_else(|| PclParserError::InvalidCommand(self.command_start))?;
+            }
+            Ok((Right(if neg { -res } else { res }), t))
+        } else {
+            let mut point = false;
+            let mut decimals = 0u8;
+            let mut res = 0u32;
+            if c != b'.' && (c < b'0' || c > b'9') {
+                return Err(PclParserError::InvalidCommand(self.command_start));
+            }
+            let t = loop {
+                if c == b'.' {
+                    if point {
+                        return Err(PclParserError::InvalidCommand(self.command_start));
+                    }
+                    point = true;
+                } else {
+                    if point {
+                        if decimals == precision {
+                            return Err(PclParserError::InvalidCommand(self.command_start));
+                        }
+                        decimals += 1;
+                    }
+                    res = res
+                        .checked_mul(10)
+                        .and_then(|x| x.checked_add(u32::from(c - b'0')))
+                        .ok_or_else(|| PclParserError::InvalidCommand(self.command_start))?;
+                }
+                c = self.read_byte()?;
+                if c != b'.' && (c < b'0' || c > b'9') {
+                    break c;
+                }
+            };
+            for _ in decimals .. precision {
+                res = res
+                    .checked_mul(10)
+                    .ok_or_else(|| PclParserError::InvalidCommand(self.command_start))?;
+            }
+            Ok((Left(res), t))
+        }
     }
 
     fn read_i16_or_u16(&mut self) -> Result<(Either<u16, i16>, u8), PclParserError> {
@@ -169,6 +249,14 @@ impl<'a> PclParser<'a> {
         }
     }
     
+    fn parse_amp_a(&mut self) -> Result<PclCommand, PclParserError> {
+        let (n, c) = self.read_decimal(4)?;
+        match c {
+            b'R' => Ok(PclCommand::VerticalCursorPositioningRows(n)),
+            _ => Err(PclParserError::UnknownCommand(self.command_start)),
+        }
+    }
+    
     fn parse_amp_d(&mut self) -> Result<PclCommand, PclParserError> {
         match self.read_byte()? {
             b'D' => Ok(PclCommand::EnableUnderline),
@@ -205,6 +293,7 @@ impl<'a> PclParser<'a> {
             b'l' => self.parse_amp_l(),
             b's' => self.parse_amp_s(),
             b'd' => self.parse_amp_d(),
+            b'a' => self.parse_amp_a(),
             _ => Err(PclParserError::UnknownCommand(self.command_start)),
         }
     }
